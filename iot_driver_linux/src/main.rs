@@ -61,7 +61,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             commands::query::profile(&ctx)?;
         }
         Some(Commands::Led) => {
-            commands::query::led(&ctx)?;
+            commands::with_keyboard(&ctx, commands::query::led)?;
         }
         Some(Commands::Debounce) => {
             commands::query::debounce(&ctx)?;

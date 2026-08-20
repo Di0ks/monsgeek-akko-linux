@@ -169,20 +169,25 @@ pub fn profile(ctx: &CmdCtx) -> CommandResult {
 }
 
 /// Get LED settings
-pub fn led(ctx: &CmdCtx) -> CommandResult {
-    let transport = open_preferred_transport(ctx)?;
-    let resp = transport.query_command(transport_cmd::GET_LEDPARAM, &[], ChecksumType::Bit7)?;
-    let mode = resp[1];
-    let speed = resp[2];
-    let brightness = resp[3];
-    let r = resp[5];
-    let g = resp[6];
-    let b = resp[7];
+///
+/// Parsed rather than hand-indexed: the wire stores speed inverted (4 = slow), and
+/// printing the raw byte contradicted both `set-led`, which takes the user-facing
+/// value, and the TUI.
+pub fn led(keyboard: &monsgeek_keyboard::KeyboardInterface) -> CommandResult {
+    let params = keyboard.get_led_params()?;
+    let (r, g, b) = (params.color.r, params.color.g, params.color.b);
     println!("LED:");
-    println!("  Mode:       {} ({})", mode, cmd::led_mode_name(mode));
-    println!("  Speed:      {speed}/4");
-    println!("  Brightness: {brightness}/4");
+    println!(
+        "  Mode:       {} ({})",
+        params.mode as u8,
+        params.mode.name()
+    );
+    println!("  Speed:      {}/4", params.speed);
+    println!("  Brightness: {}/4", params.brightness);
     println!("  Color:      #{r:02X}{g:02X}{b:02X}");
+    if params.direction == protocol::LED_DAZZLE_ON {
+        println!("  Dazzle:     ON (rainbow cycle)");
+    }
     Ok(())
 }
 

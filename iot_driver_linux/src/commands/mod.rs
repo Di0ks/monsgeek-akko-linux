@@ -35,8 +35,8 @@ use iot_driver::protocol::{self, cmd};
 use monsgeek_keyboard::settings::FirmwareVersion;
 use monsgeek_transport::protocol::Profile;
 use monsgeek_transport::{
-    DeviceDiscovery, FlowControlTransport, HidDiscovery, PacketFilter, PrinterConfig, Transport,
-    format_device_list,
+    DeviceDiscovery, FlowControlTransport, HidDiscovery, HidResponse, PacketFilter, PrinterConfig,
+    Transport, format_device_list,
 };
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -393,19 +393,22 @@ pub fn format_command_response(cmd_byte: u8, resp: &[u8]) {
             println!("  Debounce:   {} ms", resp[1]);
         }
         cmd::GET_LEDPARAM => {
-            let mode = resp[1];
-            let brightness = resp[2];
-            let speed = protocol::LED_SPEED_MAX - resp[3].min(protocol::LED_SPEED_MAX);
-            let options = resp[4];
-            let r = resp[5];
-            let g = resp[6];
-            let b = resp[7];
-            let dazzle = (options & protocol::LED_OPTIONS_MASK) == protocol::LED_DAZZLE_ON;
-            println!("  LED Mode:   {} ({})", mode, cmd::led_mode_name(mode));
-            println!("  Brightness: {brightness}/4");
-            println!("  Speed:      {speed}/4");
+            // Byte 2 is speed and byte 3 is brightness, not the other way round —
+            // reading them swapped reported a fully lit board as brightness 0.
+            let Ok(params) = monsgeek_transport::command::LedParamsResponse::from_data(resp) else {
+                println!("  LED:        unparseable response");
+                return;
+            };
+            let (r, g, b) = (params.color.r, params.color.g, params.color.b);
+            println!(
+                "  LED Mode:   {} ({})",
+                params.mode as u8,
+                params.mode.name()
+            );
+            println!("  Brightness: {}/4", params.brightness);
+            println!("  Speed:      {}/4", params.speed);
             println!("  Color RGB:  ({r}, {g}, {b}) #{r:02X}{g:02X}{b:02X}");
-            if dazzle {
+            if params.dazzle {
                 println!("  Dazzle:     ON (rainbow cycle)");
             }
         }
