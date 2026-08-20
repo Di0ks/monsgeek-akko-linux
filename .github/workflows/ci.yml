@@ -166,7 +166,11 @@ jobs:
           workspaces: akko-hid-bpf/akko-ebpf
 
       - name: Install bpf-linker
-        run: cargo install bpf-linker --locked
+        # Pinned: 0.11.0 dropped the vendored LLVM and now needs llvm-sys 21+, which
+        # the runner image does not ship, so an unpinned install fails at
+        # "could not find llvm-config". 0.10.4 is the last version CI ran green on.
+        # Unpin once the job installs a matching LLVM.
+        run: cargo install bpf-linker --locked --version 0.10.4
 
       - name: Verify aya-ebpf version from Cargo.lock
         working-directory: akko-hid-bpf/akko-ebpf
