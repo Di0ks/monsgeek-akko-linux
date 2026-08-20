@@ -132,12 +132,17 @@ impl Transport for HidBluetoothTransport {
                     if n >= 3 && buf[0] == ble::VENDOR_REPORT_ID && buf[1] == ble::CMDRESP_MARKER {
                         return Ok(buf[2..n.min(ble::REPORT_SIZE)].to_vec());
                     }
-                    // Skip 0x66-framed events
-                    if n >= 2 && buf[0] == ble::VENDOR_REPORT_ID && buf[1] == ble::EVENT_MARKER {
-                        continue;
-                    }
-                    // Return anything else
-                    return Ok(buf[..n].to_vec());
+                    // Everything else on this node is not a command response. BLE puts
+                    // the whole HOGP service on one hidraw node — report IDs 1-5 are
+                    // keyboard/consumer/system/NKRO/mouse traffic, and report 6 with the
+                    // 0x66 marker is the event channel. Handing any of those back would
+                    // make it a "response": paged readers concatenate what they get, so
+                    // a keypress landing mid-read slides every later key onto the wrong
+                    // one. Keep draining until a real response arrives or we time out.
+                    trace!(
+                        "Skipping non-response report id=0x{:02X} len={n}",
+                        buf.first().copied().unwrap_or(0)
+                    );
                 }
                 Err(e) => return Err(TransportError::from(e)),
             }

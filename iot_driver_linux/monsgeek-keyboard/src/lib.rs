@@ -81,8 +81,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
 
 use monsgeek_transport::protocol::{
-    CommandTable, DefId, KeymatrixLayer, Layer, LedPos, MacroSlot, Profile, StripIdx, cmd,
-    magnetism as mag_cmd,
+    CommandTable, DefId, INPUT_REPORT_SIZE, KeymatrixLayer, Layer, LedPos, MacroSlot, Profile,
+    StripIdx, cmd, magnetism as mag_cmd,
 };
 use monsgeek_transport::{ChecksumType, FlowControlTransport, Transport};
 // Typed commands
@@ -196,6 +196,14 @@ impl KeyboardInterface {
     /// Profile that keymatrix and Fn operations target.
     pub fn active_profile(&self) -> Profile {
         Profile::try_from(self.active_profile.load(Ordering::Relaxed)).unwrap_or_default()
+    }
+
+    /// Pages this interface has read, for progress reporting.
+    ///
+    /// Sample it either side of a long paged load to show how far along it is —
+    /// see [`FlowControlTransport::pages_read`].
+    pub fn pages_read(&self) -> u64 {
+        self.transport.pages_read()
     }
 
     /// Set matrix key names from a device profile.
@@ -705,9 +713,12 @@ impl KeyboardInterface {
         // Read 6 blocks of 64 bytes each
         for block in 0..6u8 {
             let query = [slot, 0xFF, block];
-            let resp = self
-                .transport
-                .query_raw(cmd::GET_USERPIC, &query, ChecksumType::Bit7)?;
+            let resp = self.transport.query_page(
+                cmd::GET_USERPIC,
+                &query,
+                ChecksumType::Bit7,
+                INPUT_REPORT_SIZE,
+            )?;
             data.extend_from_slice(&resp);
         }
 
@@ -819,18 +830,17 @@ impl KeyboardInterface {
 
         for page in 0..num_pages {
             let query = GetMultiMagnetismData::paged(sub_cmd, page as u8);
-            match self.transport.query_raw(
+            // Propagate rather than padding with zeros: a fabricated page reads back
+            // as a whole block of keys with 0.00 mm actuation, which is indis-
+            // tinguishable from a real setting. Callers that treat a sub-command as
+            // optional (deadzones on older firmware) already handle the error.
+            let resp = self.transport.query_page(
                 cmd::GET_MULTI_MAGNETISM,
                 query.as_bytes(),
                 ChecksumType::Bit7,
-            ) {
-                Ok(resp) => {
-                    all_data.extend_from_slice(&resp);
-                }
-                Err(_) => {
-                    all_data.extend(std::iter::repeat_n(0u8, 64));
-                }
-            }
+                INPUT_REPORT_SIZE,
+            )?;
+            all_data.extend_from_slice(&resp);
         }
 
         Ok(all_data)
@@ -1515,13 +1525,15 @@ impl KeyboardInterface {
                 layer: layer.get(),
             };
 
-            // `?`, never a skip. Callers index this buffer by `key_index * 4`, so
-            // dropping 64 bytes mid-stream slides every later key's binding onto the
-            // wrong key — and it still looks like a successful read.
-            let resp = self.transport.query_raw(
+            // `?`, never a skip, and a length-checked page. Callers index this buffer
+            // by `key_index * 4`, so dropping — or shortening — 64 bytes mid-stream
+            // slides every later key's binding onto the wrong key, and it still looks
+            // like a successful read.
+            let resp = self.transport.query_page(
                 self.commands.get_keymatrix,
                 query.as_bytes(),
                 ChecksumType::Bit7,
+                INPUT_REPORT_SIZE,
             )?;
             all_data.extend_from_slice(&resp);
         }
@@ -1561,9 +1573,12 @@ impl KeyboardInterface {
                 page: page as u8,
             };
             // Same offset hazard as `get_keymatrix`.
-            let resp =
-                self.transport
-                    .query_raw(cmd::GET_FN, query.as_bytes(), ChecksumType::Bit7)?;
+            let resp = self.transport.query_page(
+                cmd::GET_FN,
+                query.as_bytes(),
+                ChecksumType::Bit7,
+                INPUT_REPORT_SIZE,
+            )?;
             all_data.extend_from_slice(&resp);
         }
 
@@ -1675,9 +1690,12 @@ impl KeyboardInterface {
 
             // A skipped page shifts the rest of the macro, and the shifted bytes then
             // parse as a plausible-but-wrong keystroke sequence — so propagate.
-            let resp =
-                self.transport
-                    .query_raw(cmd::GET_MACRO, query.as_bytes(), ChecksumType::Bit7)?;
+            let resp = self.transport.query_page(
+                cmd::GET_MACRO,
+                query.as_bytes(),
+                ChecksumType::Bit7,
+                INPUT_REPORT_SIZE,
+            )?;
 
             // Skip command echo if present (some transports may add it)
             let start = if !resp.is_empty() && resp[0] == cmd::GET_MACRO {

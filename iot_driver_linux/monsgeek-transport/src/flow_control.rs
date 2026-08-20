@@ -14,7 +14,7 @@
 
 use std::collections::VecDeque;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
@@ -45,6 +45,8 @@ const MAX_CACHE_SIZE: usize = 16;
 pub struct FlowControlTransport {
     inner: Arc<dyn Transport>,
     flow: FlowState,
+    /// Pages fetched by `query_page`, for progress reporting on long paged reads.
+    pages: AtomicU64,
 }
 
 enum FlowState {
@@ -205,7 +207,21 @@ impl FlowControlTransport {
             },
         };
 
-        Self { inner, flow }
+        Self {
+            inner,
+            flow,
+            pages: AtomicU64::new(0),
+        }
+    }
+
+    /// Pages read so far via [`query_page`](Self::query_page).
+    ///
+    /// Reading every per-key table is ~70 pages, and on BLE each carries a 150 ms
+    /// settle gap — long enough that callers want to show progress. Counting pages
+    /// rather than all queries keeps a concurrent poll of, say, battery level from
+    /// inflating the number. Sample it either side of a load to see its real work.
+    pub fn pages_read(&self) -> u64 {
+        self.pages.load(Ordering::Relaxed)
     }
 
     /// Access the wrapped raw transport.
@@ -259,6 +275,40 @@ impl FlowControlTransport {
                 self.dongle_dispatch(request_tx, cmd_byte, data, checksum, true, false)
             }
         }
+    }
+
+    /// One page of a paged read, validated by length.
+    ///
+    /// Paged responses (keymatrix, Fn table, macros, userpics, magnetism) carry no
+    /// command echo — the payload starts at byte 0 — so length is the only handle we
+    /// have on "is this actually my page?". Callers concatenate the pages and index
+    /// the result by `key_index * 4`, so accepting a short or foreign packet does not
+    /// lose one page, it slides every later key onto the wrong one and still looks
+    /// like a successful read. Retry instead, and fail loudly if no page arrives.
+    pub fn query_page(
+        &self,
+        cmd_byte: u8,
+        data: &[u8],
+        checksum: ChecksumType,
+        expected_len: usize,
+    ) -> Result<Vec<u8>, TransportError> {
+        let mut last_len = None;
+        for _ in 0..timing::QUERY_RETRIES {
+            let resp = self.query_raw(cmd_byte, data, checksum)?;
+            if resp.len() == expected_len {
+                self.pages.fetch_add(1, Ordering::Relaxed);
+                return Ok(resp);
+            }
+            debug!(
+                "Page read for 0x{cmd_byte:02X}: expected {expected_len} bytes, got {}",
+                resp.len()
+            );
+            last_len = Some(resp.len());
+        }
+        Err(TransportError::Internal(format!(
+            "paged read of 0x{cmd_byte:02X} returned {} bytes, expected {expected_len}",
+            last_len.unwrap_or(0)
+        )))
     }
 
     /// Fire-and-forget command with default delay.
@@ -742,5 +792,94 @@ impl Drop for FlowControlTransport {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::protocol::INPUT_REPORT_SIZE;
+
+    /// A transport whose reads are scripted, so a contaminated queue is reproducible.
+    struct ScriptedTransport {
+        responses: Mutex<VecDeque<Vec<u8>>>,
+        info: TransportDeviceInfo,
+    }
+
+    impl ScriptedTransport {
+        fn new(responses: Vec<Vec<u8>>) -> Arc<Self> {
+            Arc::new(Self {
+                responses: Mutex::new(responses.into()),
+                info: TransportDeviceInfo {
+                    vid: 0x3151,
+                    pid: 0x5027,
+                    is_dongle: false,
+                    // Wired: no read gap, so the test does not sleep per retry
+                    transport_type: TransportType::HidWired,
+                    device_path: String::new(),
+                    serial: None,
+                    product_name: None,
+                },
+            })
+        }
+    }
+
+    impl Transport for ScriptedTransport {
+        fn send_report(&self, _: u8, _: &[u8], _: ChecksumType) -> Result<(), TransportError> {
+            Ok(())
+        }
+
+        fn read_report(&self) -> Result<Vec<u8>, TransportError> {
+            self.responses
+                .lock()
+                .pop_front()
+                .ok_or(TransportError::Timeout)
+        }
+
+        fn read_event(&self, _: u32) -> Result<Option<VendorEvent>, TransportError> {
+            Ok(None)
+        }
+
+        fn device_info(&self) -> &TransportDeviceInfo {
+            &self.info
+        }
+
+        fn is_connected(&self) -> bool {
+            true
+        }
+
+        fn close(&self) -> Result<(), TransportError> {
+            Ok(())
+        }
+
+        fn get_battery_status(&self) -> Result<(u8, bool, bool), TransportError> {
+            Ok((100, true, false))
+        }
+    }
+
+    /// A keypress report arriving mid-read must not become "the page": it is shorter
+    /// than a page, and concatenating it slides every later key onto the wrong one.
+    #[test]
+    fn query_page_rejects_a_foreign_short_report() {
+        let keypress = vec![0x01, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00];
+        let page = vec![0xAB; INPUT_REPORT_SIZE];
+        let t = FlowControlTransport::new(ScriptedTransport::new(vec![keypress, page.clone()]));
+
+        let got = t
+            .query_page(0x8A, &[], ChecksumType::Bit7, INPUT_REPORT_SIZE)
+            .expect("retry should reach the real page");
+        assert_eq!(got, page);
+    }
+
+    /// Never return a wrong-sized page as if it were good — callers index by offset.
+    #[test]
+    fn query_page_gives_up_rather_than_returning_a_short_page() {
+        let short = vec![0u8; INPUT_REPORT_SIZE - 2];
+        let t = FlowControlTransport::new(ScriptedTransport::new(vec![short; 8]));
+
+        assert!(
+            t.query_page(0x8A, &[], ChecksumType::Bit7, INPUT_REPORT_SIZE)
+                .is_err()
+        );
     }
 }
