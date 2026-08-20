@@ -2,7 +2,9 @@
 
 use super::CommandResult;
 use iot_driver::protocol::{cmd, polling_rate};
-use monsgeek_keyboard::{KeyboardInterface, PollingRate, SleepTimeSettings};
+use monsgeek_keyboard::{
+    KeyboardInterface, PollingRate, RT_STABILITY_MAX, RT_STABILITY_STEP_MS, SleepTimeSettings,
+};
 use monsgeek_transport::protocol::Profile;
 use std::io::{self, Write};
 
@@ -43,6 +45,79 @@ pub fn set_rate(keyboard: &KeyboardInterface, rate: &str) -> CommandResult {
         );
     }
     Ok(())
+}
+
+/// Set keyboard options (read-modify-write: SET_KBOPTION carries the whole set)
+pub fn set_options(
+    keyboard: &KeyboardInterface,
+    os_mode: Option<u8>,
+    fn_layer: Option<u8>,
+    anti_mistouch: Option<bool>,
+    rt_stability_ms: Option<u16>,
+    wasd_swap: Option<bool>,
+) -> CommandResult {
+    let mut opts = keyboard.get_kb_options()?;
+    let before = opts;
+
+    if let Some(v) = os_mode {
+        opts.os_mode = v;
+    }
+    if let Some(v) = fn_layer {
+        opts.fn_layer = v;
+    }
+    if let Some(v) = anti_mistouch {
+        opts.anti_mistouch = v;
+    }
+    if let Some(ms) = rt_stability_ms {
+        opts.rt_stability = (ms / RT_STABILITY_STEP_MS).min(RT_STABILITY_MAX as u16) as u8;
+    }
+    if let Some(v) = wasd_swap {
+        opts.wasd_swap = v;
+    }
+
+    if opts == before {
+        println!("Keyboard options unchanged");
+        return Ok(());
+    }
+
+    keyboard.set_kb_options(&opts)?;
+    println!("Keyboard options set:");
+    if opts.os_mode != before.os_mode {
+        println!(
+            "  OS Mode:        {} -> {}",
+            before.os_mode_name(),
+            opts.os_mode_name()
+        );
+    }
+    if opts.fn_layer != before.fn_layer {
+        println!("  Fn Layer:       {} -> {}", before.fn_layer, opts.fn_layer);
+    }
+    if opts.anti_mistouch != before.anti_mistouch {
+        println!(
+            "  Anti-Mistouch:  {} -> {}",
+            on_off(before.anti_mistouch),
+            on_off(opts.anti_mistouch)
+        );
+    }
+    if opts.rt_stability != before.rt_stability {
+        println!(
+            "  RT Stability:   {} ms -> {} ms",
+            before.rt_stability_ms(),
+            opts.rt_stability_ms()
+        );
+    }
+    if opts.wasd_swap != before.wasd_swap {
+        println!(
+            "  WASD Swap:      {} -> {}",
+            on_off(before.wasd_swap),
+            on_off(opts.wasd_swap)
+        );
+    }
+    Ok(())
+}
+
+fn on_off(v: bool) -> &'static str {
+    if v { "ON" } else { "OFF" }
 }
 
 /// Set LED mode and parameters

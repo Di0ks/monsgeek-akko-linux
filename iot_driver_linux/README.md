@@ -75,7 +75,7 @@ iot_driver modes
 | `led` | `light`, `l` | LED settings |
 | `debounce` | `deb`, `d` | Debounce time |
 | `rate` | `poll`, `hz` | Polling rate |
-| `options` | `opts`, `o` | Fn layer, WASD swap, etc. |
+| `options` | `opts`, `o` | OS mode, Fn layer, anti-mistouch, RT stability, WASD swap |
 | `features` | `feat`, `f` | Supported features |
 | `sleep` | `s` | Sleep timers |
 | `battery` | `bat`, `b` | Battery level and charging status |
@@ -94,6 +94,10 @@ iot_driver set-rate 8000          # Polling rate (125-8000 Hz)
 iot_driver set-led wave 4 2       # Mode, brightness, speed
 iot_driver set-led 0              # Mode by number
 iot_driver set-color-all 255 0 0  # Per-key color (red)
+
+# Keyboard options (only the flags you pass change)
+iot_driver set-options --wasd-swap on   # the Fn+W toggle, over the wire
+iot_driver set-options --rt-stability 75 --anti-mistouch off
 
 # Sleep
 iot_driver set-sleep --idle 2m --deep 10m

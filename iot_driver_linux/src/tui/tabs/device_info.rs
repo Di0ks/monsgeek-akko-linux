@@ -53,6 +53,7 @@ pub(in crate::tui) enum InfoTag {
     SideBlue,
     SideColorHex,
     SideDazzle,
+    OsMode,
     FnLayer,
     WasdSwap,
     AntiMistouch,
@@ -658,8 +659,17 @@ impl App {
         }
     }
 
+    pub(in crate::tui) fn set_os_mode(&mut self, mode: u8) {
+        let mode = mode.min(3);
+        if let Some(ref mut opts) = self.options {
+            opts.os_mode = mode;
+        }
+        self.save_options();
+        self.status_msg = format!("OS mode: {}", monsgeek_keyboard::os_mode_name(mode));
+    }
+
     pub(in crate::tui) fn set_fn_layer(&mut self, layer: u8) {
-        let layer = layer.min(3);
+        let layer = layer.min(1);
         if let Some(ref mut opts) = self.options {
             opts.fn_layer = layer;
         }
@@ -689,13 +699,17 @@ impl App {
         self.status_msg = format!("Anti-mistouch: {}", if new_val { "ON" } else { "OFF" });
     }
 
-    pub(in crate::tui) fn set_rt_stability(&mut self, value: u8) {
-        let value = value.min(125);
+    /// `level` is the raw firmware level (0-5), 25 ms per step
+    pub(in crate::tui) fn set_rt_stability(&mut self, level: u8) {
+        let level = level.min(monsgeek_keyboard::RT_STABILITY_MAX);
         if let Some(ref mut opts) = self.options {
-            opts.rt_stability = value;
+            opts.rt_stability = level;
         }
         self.save_options();
-        self.status_msg = format!("RT stability: {value}ms");
+        self.status_msg = format!(
+            "RT stability: {}ms",
+            level as u16 * monsgeek_keyboard::RT_STABILITY_STEP_MS
+        );
     }
 
     /// Update a single sleep time value with validation (deep >= idle)
@@ -1089,7 +1103,10 @@ pub(in crate::tui) fn render_device_info(f: &mut Frame, app: &mut App, area: Rec
             ListItem::new(Line::from(vec![
                 Span::raw("RT Stability:   "),
                 Span::styled(
-                    format!("< {}ms >", opts.rt_stability),
+                    format!(
+                        "< {}ms >",
+                        opts.rt_stability as u16 * monsgeek_keyboard::RT_STABILITY_STEP_MS
+                    ),
                     Style::default().fg(Color::Cyan),
                 ),
             ])),
@@ -1134,17 +1151,14 @@ pub(in crate::tui) fn render_device_info(f: &mut Frame, app: &mut App, area: Rec
                 ),
             ])),
         ));
-        let os_mode_str = match opts.os_mode {
-            0 => "Windows",
-            1 => "macOS",
-            2 => "Linux",
-            _ => "Unknown",
-        };
         items.push((
-            InfoTag::ReadOnly,
+            InfoTag::OsMode,
             ListItem::new(Line::from(vec![
                 Span::raw("OS Mode:        "),
-                Span::styled(os_mode_str, Style::default().fg(Color::Magenta)),
+                Span::styled(
+                    format!("< {} >", monsgeek_keyboard::os_mode_name(opts.os_mode)),
+                    Style::default().fg(Color::Magenta),
+                ),
             ])),
         ));
     } else if loading.options == LoadState::Loading {

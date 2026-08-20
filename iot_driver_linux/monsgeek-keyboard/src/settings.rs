@@ -199,48 +199,83 @@ pub struct BatteryInfo {
 
 pub use monsgeek_transport::command::PollingRate;
 
-/// Keyboard options
-#[derive(Debug, Clone, Default)]
+/// Keyboard options (`SET_KBOPTION` 0x09 / `GET_KBOPTION` 0x89)
+///
+/// Payload layout, firmware-validated against v407 (`case 9` and `case 0x89` of the
+/// vendor command dispatch) and the vendor RY5088 web driver:
+/// `[cmd, os_mode, fn_layer, anti_mistouch, rt_stability, wasd_swap]`.
+///
+/// Both commands carry the whole set, so changing one field means read-modify-write.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct KeyboardOptions {
-    /// OS mode (0=Windows, 1=Mac)
+    /// OS mode (0=Windows, 1=macOS, 2=iOS, 3=Android); firmware keeps 2 bits
     pub os_mode: u8,
-    /// Fn layer setting
+    /// Fn layer index; firmware keeps 1 bit, so only 0 or 1
     pub fn_layer: u8,
     /// Anti-mistouch enabled
     pub anti_mistouch: bool,
-    /// Rapid Trigger stability mode (0=off, 1-3=levels)
+    /// Rapid Trigger stability level (0=off, 1-5), [`RT_STABILITY_STEP_MS`] per level
     pub rt_stability: u8,
-    /// WASD/arrow swap
+    /// WASD/arrow swap (the Fn+W toggle)
     pub wasd_swap: bool,
 }
 
+/// Milliseconds per Rapid Trigger stability level
+pub const RT_STABILITY_STEP_MS: u16 = 25;
+
+/// Highest Rapid Trigger stability level the firmware accepts
+pub const RT_STABILITY_MAX: u8 = 5;
+
 impl KeyboardOptions {
-    /// Parse from GET_KBOPTION response bytes
+    /// Parse from GET_KBOPTION response payload (response bytes after the command byte)
     pub fn from_bytes(bytes: &[u8]) -> Self {
-        if bytes.len() < 8 {
+        if bytes.len() < 5 {
             return Self::default();
         }
         Self {
-            os_mode: bytes[0],
-            fn_layer: bytes[1],
+            os_mode: bytes[0] & 0x03,
+            fn_layer: bytes[1] & 0x01,
             anti_mistouch: bytes[2] != 0,
-            rt_stability: bytes[3],
-            wasd_swap: bytes[7] != 0,
+            // The firmware happily stores out-of-range levels but treats them as off
+            rt_stability: if bytes[3] > RT_STABILITY_MAX {
+                0
+            } else {
+                bytes[3]
+            },
+            wasd_swap: bytes[4] != 0,
         }
     }
 
     /// Convert to protocol bytes for SET_KBOPTION
-    pub fn to_bytes(&self) -> [u8; 8] {
+    pub fn to_bytes(&self) -> [u8; 5] {
         [
-            self.os_mode,
-            self.fn_layer,
-            if self.anti_mistouch { 1 } else { 0 },
-            self.rt_stability,
-            0, // Reserved
-            0, // Reserved
-            0, // Reserved
-            if self.wasd_swap { 1 } else { 0 },
+            self.os_mode & 0x03,
+            self.fn_layer & 0x01,
+            u8::from(self.anti_mistouch),
+            self.rt_stability.min(RT_STABILITY_MAX),
+            u8::from(self.wasd_swap),
         ]
+    }
+
+    /// Rapid Trigger stability window in milliseconds
+    pub fn rt_stability_ms(&self) -> u16 {
+        self.rt_stability as u16 * RT_STABILITY_STEP_MS
+    }
+
+    /// Human-readable OS mode
+    pub fn os_mode_name(&self) -> &'static str {
+        os_mode_name(self.os_mode)
+    }
+}
+
+/// Human-readable name for an OS mode value
+pub fn os_mode_name(mode: u8) -> &'static str {
+    match mode {
+        0 => "Windows",
+        1 => "macOS",
+        2 => "iOS",
+        3 => "Android",
+        _ => "Unknown",
     }
 }
 
@@ -415,5 +450,52 @@ impl FeatureList {
     /// Get the precision factor (10, 100, or 200)
     pub fn precision_factor(&self) -> f64 {
         self.precision().map(|p| p.factor()).unwrap_or(10.0) // Default to coarse if invalid
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Byte 4 is the WASD/arrow swap flag — the same toggle Fn+W drives.
+    #[test]
+    fn kb_options_wire_layout() {
+        // GET_KBOPTION payload: os=macOS, fn=1, anti-mistouch on, RT level 3, swap on
+        let opts = KeyboardOptions::from_bytes(&[1, 1, 1, 3, 1]);
+        assert_eq!(opts.os_mode, 1);
+        assert_eq!(opts.os_mode_name(), "macOS");
+        assert_eq!(opts.fn_layer, 1);
+        assert!(opts.anti_mistouch);
+        assert_eq!(opts.rt_stability, 3);
+        assert_eq!(opts.rt_stability_ms(), 75);
+        assert!(opts.wasd_swap);
+
+        assert_eq!(opts.to_bytes(), [1, 1, 1, 3, 1]);
+    }
+
+    #[test]
+    fn kb_options_masks_firmware_field_widths() {
+        // The firmware keeps 2 bits of OS mode and 1 bit of Fn layer
+        let opts = KeyboardOptions::from_bytes(&[0xFF, 0xFF, 0, 0, 0]);
+        assert_eq!(opts.os_mode, 3);
+        assert_eq!(opts.fn_layer, 1);
+
+        let clamped = KeyboardOptions {
+            os_mode: 7,
+            fn_layer: 3,
+            rt_stability: 200,
+            ..Default::default()
+        };
+        assert_eq!(clamped.to_bytes(), [3, 1, 0, RT_STABILITY_MAX, 0]);
+    }
+
+    /// Out-of-range RT levels read back as off, matching the firmware's own handling
+    #[test]
+    fn kb_options_rejects_bogus_rt_level() {
+        assert_eq!(
+            KeyboardOptions::from_bytes(&[0, 0, 0, 100, 0]).rt_stability,
+            0
+        );
+        assert_eq!(KeyboardOptions::from_bytes(&[]), KeyboardOptions::default());
     }
 }

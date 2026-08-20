@@ -428,6 +428,10 @@ impl App {
             }
             VendorEvent::WasdSwapToggle { swapped } => {
                 self.info.wasd_swap = swapped;
+                // Fn+W changes it on the keyboard; keep the editable row in step
+                if let Some(ref mut opts) = self.options {
+                    opts.wasd_swap = swapped;
+                }
                 self.status_msg = format!(
                     "WASD/Arrows: {}",
                     if swapped { "SWAPPED" } else { "normal" }
@@ -440,6 +444,10 @@ impl App {
                 self.status_msg = "Dial mode toggled".to_string();
             }
             VendorEvent::FnLayerToggle { layer } => {
+                self.info.fn_layer = layer;
+                if let Some(ref mut opts) = self.options {
+                    opts.fn_layer = layer;
+                }
                 self.status_msg = format!("Fn layer: {}", layer);
             }
             VendorEvent::SettingsAck { started } => {

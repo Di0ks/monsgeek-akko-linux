@@ -1401,6 +1401,7 @@ pub async fn run(device_selector: Option<String>) -> io::Result<()> {
                                     InfoTag::SideGreen => { let g = RGB_SPINNER.decrement_u8(app.info.side_g, coarse); app.set_side_color(app.info.side_r, g, app.info.side_b); }
                                     InfoTag::SideBlue => { let b = RGB_SPINNER.decrement_u8(app.info.side_b, coarse); app.set_side_color(app.info.side_r, app.info.side_g, b); }
                                     InfoTag::SideDazzle => app.toggle_side_dazzle(),
+                                    InfoTag::OsMode => { if let Some(ref opts) = app.options.clone() { app.set_os_mode(OS_MODE_SPINNER.decrement_u8(opts.os_mode, coarse)); } }
                                     InfoTag::FnLayer => { if let Some(ref opts) = app.options.clone() { app.set_fn_layer(FN_LAYER_SPINNER.decrement_u8(opts.fn_layer, coarse)); } }
                                     InfoTag::WasdSwap => app.toggle_wasd_swap(),
                                     InfoTag::AntiMistouch => app.toggle_anti_mistouch(),
@@ -1468,6 +1469,7 @@ pub async fn run(device_selector: Option<String>) -> io::Result<()> {
                                     InfoTag::SideGreen => { let g = RGB_SPINNER.increment_u8(app.info.side_g, coarse); app.set_side_color(app.info.side_r, g, app.info.side_b); }
                                     InfoTag::SideBlue => { let b = RGB_SPINNER.increment_u8(app.info.side_b, coarse); app.set_side_color(app.info.side_r, app.info.side_g, b); }
                                     InfoTag::SideDazzle => app.toggle_side_dazzle(),
+                                    InfoTag::OsMode => { if let Some(ref opts) = app.options.clone() { app.set_os_mode(OS_MODE_SPINNER.increment_u8(opts.os_mode, coarse)); } }
                                     InfoTag::FnLayer => { if let Some(ref opts) = app.options.clone() { app.set_fn_layer(FN_LAYER_SPINNER.increment_u8(opts.fn_layer, coarse)); } }
                                     InfoTag::WasdSwap => app.toggle_wasd_swap(),
                                     InfoTag::AntiMistouch => app.toggle_anti_mistouch(),

@@ -70,7 +70,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             commands::with_keyboard(&ctx, commands::query::rate)?;
         }
         Some(Commands::Options) => {
-            commands::query::options(&ctx)?;
+            commands::with_keyboard(&ctx, commands::query::options)?;
         }
         Some(Commands::Features) => {
             commands::query::features(&ctx)?;
@@ -125,6 +125,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             commands::with_keyboard(&ctx, |kb| {
                 commands::set::set_sleep(
                     kb, idle, deep, idle_bt, idle_24g, deep_bt, deep_24g, uniform,
+                )
+            })?;
+        }
+        Some(Commands::SetOptions {
+            os,
+            fn_layer,
+            anti_mistouch,
+            rt_stability,
+            wasd_swap,
+        }) => {
+            commands::with_keyboard(&ctx, |kb| {
+                commands::set::set_options(
+                    kb,
+                    os.map(cli::OsModeArg::as_u8),
+                    fn_layer,
+                    anti_mistouch,
+                    rt_stability,
+                    wasd_swap,
                 )
             })?;
         }

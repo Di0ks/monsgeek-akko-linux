@@ -473,6 +473,31 @@ Clear this context after receiving a response to avoid stale matches.
 | 0xE5 | GET_MULTI_MAGNETISM | RT/DKS per-key settings |
 | 0xE6 | GET_FEATURE_LIST | Supported features bitmap |
 
+#### Keyboard options (`SET_KBOPTION 0x09` / `GET_KBOPTION 0x89`)
+
+Both directions share one payload; there is no per-field write, so changing one
+setting means read-modify-write.
+
+| Byte | Field | Values |
+|------|-------|--------|
+| 0 | command | `0x09` / `0x89` |
+| 1 | OS mode | 0=Windows, 1=macOS, 2=iOS, 3=Android (firmware keeps 2 bits) |
+| 2 | Fn layer | 0 or 1 (firmware keeps 1 bit) |
+| 3 | Anti-mistouch | 0/1 |
+| 4 | RT stability | level 0-5, 25 ms per level (>5 reads back as 0) |
+| 5 | **WASD/arrow swap** | 0=normal, 1=swapped |
+
+Firmware-validated in v407 (`case 9` and `case 0x89` of the vendor dispatch) and
+verified on device. WASD swap lives in bit 3 of an internal flags byte, which is
+why the Fn+W notification reports the raw value `0x08` (see
+[Keyboard Function Events](#keyboard-function-events-0x03)) — so the swap state has
+two readers: poll `GET_KBOPTION`, or listen for the `05 03 <08|00> 03` event.
+Writing byte 5 is the wire equivalent of pressing Fn+W; the firmware runs the same
+remap-rebuild + save path either way.
+
+Byte 1 is accepted but the firmware re-derives OS mode from the active connection,
+so it does not stick over USB.
+
 #### Per-key config model (RY5088, firmware-validated in Ghidra v407)
 
 A key's behaviour spans **two per-key tables**, plus a separate Fn table:

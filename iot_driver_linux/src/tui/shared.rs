@@ -10,7 +10,9 @@ use crate::firmware_api::FirmwareCheckResult;
 use crate::hid::BatteryInfo;
 use crate::keymap::KeyRow;
 use monsgeek_keyboard::TravelDepth;
-use monsgeek_keyboard::{KeyboardOptions as KbOptions, LedParams, Precision, SleepTimeSettings};
+use monsgeek_keyboard::{
+    KeyboardOptions as KbOptions, LedParams, Precision, RT_STABILITY_MAX, SleepTimeSettings,
+};
 use monsgeek_transport::TransportType;
 use monsgeek_transport::protocol::Profile;
 
@@ -218,11 +220,15 @@ pub(crate) const SPEED_SPINNER: SpinnerConfig = SpinnerConfig::integer(0, 4, 1, 
 /// Spinner config for debounce (0-25, step 1, coarse 5)
 pub(crate) const DEBOUNCE_SPINNER: SpinnerConfig = SpinnerConfig::integer(0, 25, 1, 5, "");
 
-/// Spinner config for Fn layer (0-3)
-pub(crate) const FN_LAYER_SPINNER: SpinnerConfig = SpinnerConfig::integer(0, 3, 1, 1, "");
+/// Spinner config for Fn layer (0-1; the firmware keeps a single bit)
+pub(crate) const FN_LAYER_SPINNER: SpinnerConfig = SpinnerConfig::integer(0, 1, 1, 1, "");
 
-/// Spinner config for RT stability (0-125, step 25)
-pub(crate) const RT_STABILITY_SPINNER: SpinnerConfig = SpinnerConfig::integer(0, 125, 25, 25, "");
+/// Spinner config for RT stability level (0-5, 25 ms each)
+pub(crate) const RT_STABILITY_SPINNER: SpinnerConfig =
+    SpinnerConfig::integer(0, RT_STABILITY_MAX as u16, 1, 1, "");
+
+/// Spinner config for OS mode (0=Windows, 1=macOS, 2=iOS, 3=Android)
+pub(crate) const OS_MODE_SPINNER: SpinnerConfig = SpinnerConfig::integer(0, 3, 1, 1, "");
 
 /// Spinner config for sleep time in seconds (0-3600, step 60s, coarse 300s)
 pub(crate) const SLEEP_TIME_SPINNER: SpinnerConfig = SpinnerConfig::integer(0, 3600, 60, 300, "s");

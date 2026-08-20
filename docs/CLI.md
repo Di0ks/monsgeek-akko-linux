@@ -77,10 +77,19 @@ iot_driver rate
 
 ### options
 
-Get keyboard options (Fn layer, WASD swap, etc.).
+Get keyboard options (OS mode, Fn layer, anti-mistouch, RT stability, WASD swap).
 
 ```bash
 iot_driver options
+```
+
+```
+Keyboard Options:
+  OS Mode:        0 (Windows)
+  Fn Layer:       1
+  Anti-Mistouch:  OFF
+  RT Stability:   0 ms (level 0/5)
+  WASD Swap:      OFF
 ```
 
 **Aliases:** `opts`, `opt`, `o`
@@ -203,6 +212,25 @@ iot_driver set-sleep --uniform 2m,28m            # Set idle,deep for all
 Values: seconds (`120`), minutes (`2m`), hours (`1h`), or `off`/`0`
 
 **Aliases:** `ss`
+
+### set-options
+
+Set keyboard options. Only the flags you pass change — the rest are read back
+from the keyboard first, since `SET_KBOPTION` carries the whole option set.
+
+```bash
+iot_driver set-options --wasd-swap on        # same toggle as Fn+W
+iot_driver set-options --rt-stability 75     # ms, in 25 ms steps (0-125)
+iot_driver set-options --anti-mistouch off --fn-layer 1
+iot_driver set-options --os mac              # windows|mac|ios|android
+```
+
+Booleans accept `on`/`off`, `true`/`false`, `1`/`0`, `yes`/`no`.
+
+Note: `--os` is accepted by the firmware but re-derived from the active
+connection, so it does not stick over USB.
+
+**Aliases:** `so`, `setopts`, `setopt`
 
 ### reset
 

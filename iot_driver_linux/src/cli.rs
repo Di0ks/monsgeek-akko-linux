@@ -187,6 +187,33 @@ pub enum Commands {
         uniform: Option<String>,
     },
 
+    /// Set keyboard options (Fn layer, WASD swap, anti-mistouch, RT stability, OS mode)
+    ///
+    /// Only the flags you pass are changed; the rest are read back from the
+    /// keyboard first, since the wire command carries the whole option set.
+    #[command(visible_aliases = ["so", "setopts", "setopt"])]
+    SetOptions {
+        /// OS mode
+        #[arg(long)]
+        os: Option<OsModeArg>,
+
+        /// Fn layer index (0 or 1)
+        #[arg(long, value_parser = clap::value_parser!(u8).range(0..2))]
+        fn_layer: Option<u8>,
+
+        /// Anti-mistouch (on/off)
+        #[arg(long, value_parser = clap::builder::BoolishValueParser::new())]
+        anti_mistouch: Option<bool>,
+
+        /// Rapid Trigger stability window in ms (0-125, 25 ms steps)
+        #[arg(long, value_parser = clap::value_parser!(u16).range(0..126))]
+        rt_stability: Option<u16>,
+
+        /// WASD/arrow swap (on/off) - the same toggle as Fn+W
+        #[arg(long, value_parser = clap::builder::BoolishValueParser::new())]
+        wasd_swap: Option<bool>,
+    },
+
     /// Factory reset keyboard
     Reset,
 
@@ -713,6 +740,28 @@ pub enum EffectCommands {
 pub enum SysArg {
     Win,
     Mac,
+}
+
+/// OS mode for SET_KBOPTION (firmware stores 2 bits)
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+pub enum OsModeArg {
+    #[value(alias = "win")]
+    Windows,
+    #[value(alias = "macos")]
+    Mac,
+    Ios,
+    Android,
+}
+
+impl OsModeArg {
+    pub fn as_u8(self) -> u8 {
+        match self {
+            Self::Windows => 0,
+            Self::Mac => 1,
+            Self::Ios => 2,
+            Self::Android => 3,
+        }
+    }
 }
 
 impl SysArg {

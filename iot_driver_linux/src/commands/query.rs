@@ -4,8 +4,8 @@ use super::{CmdCtx, CommandResult, format_command_response, open_preferred_trans
 use hidapi::HidApi;
 use iot_driver::hal;
 use iot_driver::protocol::{self, cmd};
-use monsgeek_keyboard::SleepTimeSettings;
 use monsgeek_keyboard::settings::FirmwareVersion;
+use monsgeek_keyboard::{RT_STABILITY_MAX, SleepTimeSettings};
 use monsgeek_transport::protocol::cmd as transport_cmd;
 use monsgeek_transport::{ChecksumType, Transport};
 use std::time::Duration;
@@ -209,11 +209,28 @@ pub fn rate(keyboard: &monsgeek_keyboard::KeyboardInterface) -> CommandResult {
 }
 
 /// Get keyboard options
-pub fn options(ctx: &CmdCtx) -> CommandResult {
-    let transport = open_preferred_transport(ctx)?;
-    let resp = transport.query_command(transport_cmd::GET_KBOPTION, &[], ChecksumType::Bit7)?;
-    println!("Options (raw): {:02X?}", &resp[..16.min(resp.len())]);
+pub fn options(keyboard: &monsgeek_keyboard::KeyboardInterface) -> CommandResult {
+    let opts = keyboard.get_kb_options()?;
+    println!("Keyboard Options:");
+    println!(
+        "  OS Mode:        {} ({})",
+        opts.os_mode,
+        opts.os_mode_name()
+    );
+    println!("  Fn Layer:       {}", opts.fn_layer);
+    println!("  Anti-Mistouch:  {}", on_off(opts.anti_mistouch));
+    println!(
+        "  RT Stability:   {} ms (level {}/{})",
+        opts.rt_stability_ms(),
+        opts.rt_stability,
+        RT_STABILITY_MAX
+    );
+    println!("  WASD Swap:      {}", on_off(opts.wasd_swap));
     Ok(())
+}
+
+fn on_off(v: bool) -> &'static str {
+    if v { "ON" } else { "OFF" }
 }
 
 /// Get supported features

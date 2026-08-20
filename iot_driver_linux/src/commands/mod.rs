@@ -410,10 +410,12 @@ pub fn format_command_response(cmd_byte: u8, resp: &[u8]) {
             }
         }
         cmd::GET_KBOPTION => {
-            println!("  Fn Layer:   {}", resp[2]);
-            println!("  Anti-ghost: {}", resp[3]);
-            println!("  RTStab:     {} ms", resp[4] as u32 * 25);
-            println!("  WASD Swap:  {}", resp[5]);
+            let opts = monsgeek_keyboard::KeyboardOptions::from_bytes(&resp[1..]);
+            println!("  OS Mode:    {}", opts.os_mode_name());
+            println!("  Fn Layer:   {}", opts.fn_layer);
+            println!("  Anti-touch: {}", opts.anti_mistouch);
+            println!("  RTStab:     {} ms", opts.rt_stability_ms());
+            println!("  WASD Swap:  {}", opts.wasd_swap);
         }
         cmd::GET_FEATURE_LIST => {
             println!("  Features:   {:02x?}", &resp[1..11]);

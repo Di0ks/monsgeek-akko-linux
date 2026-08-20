@@ -18,7 +18,7 @@ pub use magnetism::{
 };
 pub use settings::{
     BatteryInfo, FeatureList, FirmwareVersion, KeyboardOptions, PollingRate, Precision,
-    SleepTimeSettings,
+    RT_STABILITY_MAX, RT_STABILITY_STEP_MS, SleepTimeSettings, os_mode_name,
 };
 pub use sync::list_keyboards;
 
@@ -525,7 +525,7 @@ impl KeyboardInterface {
             .transport
             .query_command(cmd_byte, &[], ChecksumType::Bit7)?;
 
-        if resp.len() < 9 || resp[0] != cmd_byte {
+        if resp.len() < 6 || resp[0] != cmd_byte {
             return Err(KeyboardError::UnexpectedResponse(
                 "Invalid KB options response".into(),
             ));
