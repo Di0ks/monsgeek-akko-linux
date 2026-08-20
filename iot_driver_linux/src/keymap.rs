@@ -176,7 +176,49 @@ impl KeyRow {
 /// per-key round-trips); mode-specific tables tolerate failure on older firmware.
 ///
 /// `sys` selects the Fn table's OS variant (0 = Windows, 1 = Mac).
-pub fn load_key_rows(kb: &KeyboardInterface, sys: u8) -> Result<Vec<KeyRow>, KeyboardError> {
+/// How far a [`load_key_rows`] call has got, for progress display.
+///
+/// `done`/`total` count the loader's steps, not device pages — the point is a bar
+/// that moves and a label that says which of the seven tables is on the wire. For
+/// motion inside a step, sample [`KeyboardInterface::queries_completed`], which
+/// ticks once per page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LoadStage {
+    pub done: usize,
+    pub total: usize,
+    pub label: &'static str,
+}
+
+impl std::fmt::Display for LoadStage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} ({}/{})", self.label, self.done + 1, self.total)
+    }
+}
+
+/// Steps `load_key_rows` reports, in order.
+const LOAD_STAGES: [&str; 7] = [
+    "keymatrix layers",
+    "Fn layer",
+    "trigger settings",
+    "DKS travel",
+    "DKS modes",
+    "mod-tap times",
+    "SnapTap bindings",
+];
+
+pub fn load_key_rows(
+    kb: &KeyboardInterface,
+    sys: u8,
+    on_stage: &dyn Fn(LoadStage),
+) -> Result<Vec<KeyRow>, KeyboardError> {
+    let stage = |i: usize| {
+        on_stage(LoadStage {
+            done: i,
+            total: LOAD_STAGES.len(),
+            label: LOAD_STAGES[i],
+        })
+    };
+
     // Every position the firmware's keymatrix array holds, not just the ones the
     // device database names. The encoder's mode toggle sits at 92 and its
     // alternate rotation bindings at 96/97 — all unnamed, and all invisible while
@@ -185,19 +227,26 @@ pub fn load_key_rows(kb: &KeyboardInterface, sys: u8) -> Result<Vec<KeyRow>, Key
 
     // Keymatrix layers 0–3 (outputs / DKS combos) + the separate Fn table.
     let profile = kb.active_profile();
+    stage(0);
     let layers: [Vec<u8>; 4] = [
         kb.get_keymatrix(profile, KeymatrixLayer::ALL[0], KEYMATRIX_PAGES)?,
         kb.get_keymatrix(profile, KeymatrixLayer::ALL[1], KEYMATRIX_PAGES)?,
         kb.get_keymatrix(profile, KeymatrixLayer::ALL[2], KEYMATRIX_PAGES)?,
         kb.get_keymatrix(profile, KeymatrixLayer::ALL[3], KEYMATRIX_PAGES)?,
     ];
+    stage(1);
     let fn_layer = kb.get_fn_keymatrix(profile, sys, KEYMATRIX_PAGES).ok();
 
     // Magnetism table + mode-specific bulk reads.
+    stage(2);
     let trig = kb.get_all_triggers()?;
+    stage(3);
     let dks_travels = kb.get_dks_travels().unwrap_or_default();
+    stage(4);
     let dks_blob = kb.get_dks_trigger_modes_blob().unwrap_or_default();
+    stage(5);
     let modtap = kb.get_modtap_times().unwrap_or_default();
+    stage(6);
     let snaptap = kb.get_snaptap_binds().unwrap_or_default();
 
     Ok(build_key_rows(&RawKeyRows {

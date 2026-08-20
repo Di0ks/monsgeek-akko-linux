@@ -326,17 +326,7 @@ fn render_key_mapping_list(f: &mut Frame, app: &mut App, area: Rect) {
     f.render_widget(header, chunks[0]);
 
     if app.key_rows.is_empty() {
-        let msg = match app.loading.key_mapping {
-            LoadState::Loading => "Loading…",
-            LoadState::Error => "Failed to load — press r to retry",
-            _ => "No key data — press r to load",
-        };
-        f.render_widget(
-            Paragraph::new(msg)
-                .style(Style::default().fg(Color::DarkGray))
-                .block(Block::default().borders(Borders::ALL)),
-            chunks[1],
-        );
+        render_placeholder(f, app, chunks[1]);
         return;
     }
 
@@ -432,6 +422,75 @@ fn render_key_mapping_list(f: &mut Frame, app: &mut App, area: Rect) {
 /// Keyboard-shaped view: every key drawn at its matrix position, colored by mode.
 /// Filtered-out keys are dimmed (the whole board stays visible); the selected key
 /// (a filter match) is highlighted.
+/// What to show while there are no rows yet: the load's progress, or why there are none.
+///
+/// A full read is seven tables and ~70 round trips; on BLE that is tens of seconds,
+/// so a bare "Loading…" reads as a hang. Show which table is on the wire and let the
+/// page counter tick underneath, since one table alone can take several seconds.
+fn render_placeholder(f: &mut Frame, app: &App, area: Rect) {
+    let block = Block::default().borders(Borders::ALL);
+
+    let Some(stage) = app
+        .key_rows_progress
+        .filter(|_| app.loading.key_mapping == LoadState::Loading)
+    else {
+        let msg = match app.loading.key_mapping {
+            LoadState::Loading => "Loading…",
+            LoadState::Error => "Failed to load — press r to retry",
+            _ => "No key data — press r to load",
+        };
+        f.render_widget(
+            Paragraph::new(msg)
+                .style(Style::default().fg(Color::DarkGray))
+                .block(block),
+            area,
+        );
+        return;
+    };
+
+    // Sampled per frame, not per stage: one table can be a dozen round trips, and a
+    // counter that only moves seven times looks as stuck as no counter at all.
+    let pages = app
+        .keyboard
+        .as_ref()
+        .map_or(0, |kb| kb.pages_read())
+        .saturating_sub(app.key_rows_pages_start);
+
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Min(0),
+        ])
+        .split(inner);
+
+    f.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled("Reading ", Style::default().fg(Color::DarkGray)),
+            Span::styled(stage.label, Style::default().fg(Color::Cyan)),
+            Span::styled(
+                format!("  ({}/{}, {pages} pages)", stage.done + 1, stage.total),
+                Style::default().fg(Color::DarkGray),
+            ),
+        ])),
+        rows[0],
+    );
+    // done + 1: the named stage is in flight, not finished — a bar pinned at 0 for
+    // the first (and longest) table reads as a hang.
+    let ratio = (stage.done + 1) as f64 / stage.total as f64;
+    f.render_widget(
+        Gauge::default()
+            .gauge_style(Style::default().fg(Color::Cyan).bg(Color::DarkGray))
+            .ratio(ratio)
+            .label(format!("{:.0}%", ratio * 100.0)),
+        rows[1],
+    );
+}
+
 fn render_key_mapping_layout(f: &mut Frame, app: &mut App, area: Rect) {
     let visible = visible_indices(app);
     let filter = app.key_mapping_filter;

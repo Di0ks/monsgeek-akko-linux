@@ -96,6 +96,10 @@ struct App {
     // Remap tab state (tab 5)
     // Key Mapping tab state (unified per-key view)
     key_rows: Vec<KeyRow>,
+    /// Which table an in-flight key-mapping load is on, for the progress bar
+    key_rows_progress: Option<crate::keymap::LoadStage>,
+    /// Page counter when the current key-mapping load started
+    key_rows_pages_start: u64,
     key_mapping_selected: usize,
     key_mapping_view: KeyMappingView,
     key_mapping_sort: KmSort,
@@ -185,6 +189,8 @@ impl App {
         let persisted = crate::settings::Settings::load();
         let app = Self {
             device_selector,
+            key_rows_progress: None,
+            key_rows_pages_start: 0,
             info: FirmwareSettings::default(),
             tab: 0,
             selected: 0,
@@ -666,9 +672,14 @@ impl App {
             return;
         };
         self.loading.key_mapping = LoadState::Loading;
+        // Baseline for the per-page counter the progress bar interpolates with.
+        self.key_rows_pages_start = keyboard.pages_read();
+        self.key_rows_progress = None;
         let tx = self.gen_sender();
         tokio::spawn(async move {
-            match keymap::load_key_rows(&keyboard, 0) {
+            let stage_tx = tx.clone();
+            let on_stage = move |s| stage_tx.send(AsyncResult::KeyRowsStage(s));
+            match keymap::load_key_rows(&keyboard, 0, &on_stage) {
                 Ok(rows) => tx.send(AsyncResult::KeyRows(Ok(rows))),
                 Err(e) => tx.send(AsyncResult::KeyRows(Err(e.to_string()))),
             }
@@ -815,7 +826,11 @@ impl App {
                 self.loading.options = LoadState::Error;
                 self.status_msg = "Failed to load options".to_string();
             }
+            AsyncResult::KeyRowsStage(stage) => {
+                self.key_rows_progress = Some(stage);
+            }
             AsyncResult::KeyRows(Ok(rows)) => {
+                self.key_rows_progress = None;
                 self.key_rows = rows;
                 self.loading.key_mapping = LoadState::Loaded;
                 if self.key_mapping_selected >= self.key_rows.len() {
@@ -824,6 +839,7 @@ impl App {
                 self.status_msg = format!("{} keys loaded", self.key_rows.len());
             }
             AsyncResult::KeyRows(Err(e)) => {
+                self.key_rows_progress = None;
                 self.loading.key_mapping = LoadState::Error;
                 self.status_msg = format!("Failed to load key mapping: {e}");
             }

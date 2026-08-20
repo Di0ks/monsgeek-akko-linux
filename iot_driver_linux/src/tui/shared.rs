@@ -280,6 +280,8 @@ pub(crate) enum AsyncResult {
     Triggers(Result<TriggerSettings, String>),
     Options(Result<KbOptions, String>),
     KeyRows(Result<Vec<KeyRow>, String>),
+    /// Which table the key-mapping load is on, for the progress line
+    KeyRowsStage(crate::keymap::LoadStage),
     // Battery status (from keyboard API)
     Battery(Result<BatteryInfo, String>),
     // Operation completion (for set operations)
