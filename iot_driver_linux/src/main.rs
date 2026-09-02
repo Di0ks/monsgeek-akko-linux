@@ -20,6 +20,13 @@ use commands::CmdCtx;
 mod grpc;
 use grpc::{DriverGrpcServer, DriverService, dj_dev};
 
+// Unix domain socket depth server
+pub mod depth_server;
+
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
@@ -388,6 +395,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Some(Commands::Serve) => {
             run_server(printer_config).await?;
+        }
+        Some(Commands::DepthServer { socket }) => {
+            let path = socket
+                .or_else(|| {
+                    std::env::var(depth_server::SOCKET_PATH_ENV)
+                        .ok()
+                        .map(PathBuf::from)
+                })
+                .unwrap_or_else(|| PathBuf::from(depth_server::DEFAULT_SOCKET_PATH));
+            let shutdown = Arc::new(AtomicBool::new(false));
+            {
+                let shutdown = Arc::clone(&shutdown);
+                ctrlc::set_handler(move || shutdown.store(true, Ordering::Relaxed))?;
+            }
+            depth_server::run(path, shutdown)
+                .await
+                .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
         }
         Some(Commands::Tui) => {
             commands::utility::tui(ctx.device).await?;

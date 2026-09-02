@@ -605,6 +605,14 @@ pub enum Commands {
     #[command(visible_alias = "server")]
     Serve,
 
+    /// Run depth (magnetism) server on a Unix domain socket
+    #[command(visible_alias = "depthd")]
+    DepthServer {
+        /// Socket path (overridable via IOT_DRIVER_DEPTH_SOCK)
+        #[arg(short, long)]
+        socket: Option<std::path::PathBuf>,
+    },
+
     /// Run interactive terminal UI
     Tui,
 
