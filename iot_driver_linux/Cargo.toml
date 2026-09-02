@@ -67,8 +67,9 @@ spectrum-analyzer = "1.4"
 ashpd = { version = "0.10", optional = true }
 pipewire = { version = "0.9", optional = true }
 
-# Signal handling
-ctrlc = "3.4"
+# Signal handling ("termination" adds SIGTERM/SIGHUP so non-Ctrl-C kills also
+# trip the shared interrupt flag and commands can clean up)
+ctrlc = { version = "3.4", features = ["termination"] }
 
 # CLI parsing
 clap = { version = "4.5", features = ["derive"] }

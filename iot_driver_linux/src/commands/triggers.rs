@@ -40,7 +40,12 @@ pub fn calibrate(keyboard: &KeyboardInterface) -> CommandResult {
 
     // Determine which matrix indices have real analog (magnetic) keys.
     // Excluded: empty-name positions (gaps), non-analog positions (encoder/GPIO).
-    let has_key_names = !keyboard.matrix_key_name(0).is_empty();
+    // Check whether ANY position has a name, not position 0 specifically —
+    // several boards (e.g. FUN60 Ultra) start their matrix with a placeholder.
+    let has_key_names = (0..positions).any(|i| {
+        let name = keyboard.matrix_key_name(i);
+        !name.is_empty() && name != "?"
+    });
     let real_keys: HashSet<usize> = if has_key_names {
         (0..positions)
             .filter(|&i| {

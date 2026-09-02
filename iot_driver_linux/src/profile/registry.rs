@@ -409,3 +409,25 @@ mod tests {
         assert_eq!(registry.len(), registry2.len());
     }
 }
+
+#[cfg(test)]
+mod fun60_tests {
+    use super::*;
+
+    /// FUN60 Ultra (device 2307) has no builtin profile; names must come from the
+    /// device-matrix JSON so calibration and the TUI can label keys.
+    #[test]
+    fn fun60_ultra_matrix_names_resolve() {
+        let registry = ProfileRegistry::with_builtins();
+        let names = registry.resolve_matrix_key_names(Some(2307), 0x3151, 0x5030);
+        match names {
+            Some(names) => {
+                assert!(
+                    names.iter().any(|n| !n.is_empty()),
+                    "matrix DB provides names but all resolved empty"
+                );
+            }
+            None => panic!("resolve_matrix_key_names returned None for FUN60 Ultra"),
+        }
+    }
+}
