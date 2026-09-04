@@ -18,6 +18,7 @@ APP_DIR ?= $(PREFIX)/share/applications
 # (systemd/udev never scan /usr/local). Packagers can override for split layouts.
 UDEV_RULES_DIR ?= /usr/lib/udev/rules.d
 SYSTEMD_DIR ?= /usr/lib/systemd/system
+TMPFILES_DIR ?= /usr/lib/tmpfiles.d
 
 # Project directories
 DRIVER_DIR := iot_driver_linux
@@ -29,7 +30,7 @@ JOYSTICK_BIN := monsgeek-joystick
 LOADER_BIN := akko-loader
 
 .PHONY: all driver driver-debug bpf clean clean-driver clean-bpf \
-        install install-driver install-udev install-desktop install-bpf install-systemd install-all \
+        install install-driver install-udev install-desktop install-bpf install-systemd install-tmpfiles install-all \
         uninstall uninstall-driver uninstall-bpf \
         test check fmt help \
         install-tray uninstall-tray run-tray \
@@ -133,6 +134,19 @@ install-bpf:
 		echo "WARNING: eBPF object missing — run 'make bpf-ebpf' first, or battery-over-BPF will not work." >&2; \
 	fi
 
+## Install tmpfiles.d rule for depth-server runtime dir (group access)
+install-tmpfiles:
+	@echo "Installing tmpfiles.d rule..."
+	$(INSTALL) -d $(DESTDIR)$(TMPFILES_DIR)
+	$(INSTALL) -m 644 tmpfiles.d/iot_driver.conf $(DESTDIR)$(TMPFILES_DIR)/iot_driver.conf
+	@if [ -z "$(DESTDIR)" ]; then \
+		systemd-tmpfiles --create $(TMPFILES_DIR)/iot_driver.conf; \
+		echo "tmpfiles rule applied: /run/iot_driver owned root:input."; \
+		echo "Users must be in the 'input' group: sudo usermod -aG input USER"; \
+	else \
+		echo "Staged tmpfiles rule under DESTDIR; run 'systemd-tmpfiles --create iot_driver.conf' in postinst."; \
+	fi
+
 ## Install systemd service for BPF auto-load
 install-systemd:
 	@echo "Installing systemd service..."
@@ -170,7 +184,7 @@ install: install-driver install-udev install-desktop install-data
 	@echo "  make bpf && sudo make install-bpf install-systemd"
 
 ## Install everything (driver + BPF + systemd)
-install-all: install-driver install-udev install-desktop install-data install-bpf install-systemd
+install-all: install-driver install-udev install-desktop install-data install-bpf install-systemd install-tmpfiles
 	@echo ""
 	@echo "Full installation complete!"
 
@@ -203,6 +217,7 @@ uninstall-bpf:
 
 ## Uninstall everything
 uninstall: uninstall-driver uninstall-bpf
+	rm -f $(DESTDIR)$(TMPFILES_DIR)/iot_driver.conf
 	@echo "All components uninstalled."
 
 # ============================================================================

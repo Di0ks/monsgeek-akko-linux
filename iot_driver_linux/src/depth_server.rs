@@ -39,6 +39,12 @@ pub const DEFAULT_SOCKET_PATH: &str = "/run/iot_driver/depth.sock";
 /// Environment variable overriding the socket path.
 pub const SOCKET_PATH_ENV: &str = "IOT_DRIVER_DEPTH_SOCK";
 
+/// Environment variable naming the group the socket is chown'd to
+/// (e.g. `input`). Group members can then connect to the socket as non-root.
+pub const DEPTH_GROUP_ENV: &str = "IOT_DRIVER_DEPTH_GROUP";
+/// Default group allowed to access the socket
+pub const DEPTH_DEFAULT_GROUP: &str = "input";
+
 /// Error: client sent an unknown command byte.
 pub const ERROR_BAD_COMMAND: u8 = 1;
 /// Error: no magnetism-capable device found (sent if device vanishes mid-session).
@@ -98,6 +104,35 @@ fn encode_event(ev: DepthEvent) -> Vec<u8> {
 
 fn encode_error(code: u8) -> Vec<u8> {
     vec![b'E', code]
+}
+
+/// chown the socket file to the named group (owner unchanged, since the
+/// server typically runs as root). Numeric GIDs are used directly; names are
+/// resolved via the group database (`getgrnam`, through libc).
+fn chown_socket_group(path: &std::path::Path, group: &str) -> Result<(), String> {
+    let gid = match group.parse::<u32>() {
+        Ok(gid) => gid,
+        Err(_) => {
+            let cgroup = std::ffi::CString::new(group.to_owned())
+                .map_err(|_| format!("invalid group name {group:?}"))?;
+            // SAFETY: cgroup is a valid NUL-terminated string; getgrnam only
+            // reads it and returns a pointer into the group database.
+            let gr = unsafe { libc::getgrnam(cgroup.as_ptr()) };
+            if gr.is_null() {
+                return Err(format!("group {group:?} not found"));
+            }
+            // SAFETY: getgrnam returned a valid `group` struct on success.
+            unsafe { (*gr).gr_gid }
+        }
+    };
+    // SAFETY: path is a valid C string from Rust's CString conversion.
+    let cpath = std::ffi::CString::new(path.as_os_str().as_encoded_bytes())
+        .map_err(|_| "socket path contains NUL".to_string())?;
+    let rc = unsafe { libc::chown(cpath.as_ptr(), u32::MAX as libc::uid_t, gid) };
+    if rc != 0 {
+        return Err(std::io::Error::last_os_error().to_string());
+    }
+    Ok(())
 }
 
 /// Open the first discovered wired/dongle device that supports magnetism.
@@ -290,12 +325,19 @@ pub async fn run(
     let _ = std::fs::remove_file(&socket_path);
     let listener = UnixListener::bind(&socket_path)
         .map_err(|e| format!("cannot bind {}: {e}", socket_path.display()))?;
-    // World-accessible: the depth feed is read-only telemetry; group/other
-    // restrictions can be applied with a tmpfiles.d rule if desired.
+    // Group-restricted: depth feed is read-only telemetry; the group is set
+    // from IOT_DRIVER_DEPTH_GROUP (see tmpfiles.d rule which pre-creates the
+    // parent dir with the same group so group members can traverse it).
     let _ = std::fs::set_permissions(
         &socket_path,
         std::os::unix::fs::PermissionsExt::from_mode(0o660),
     );
+    let group = std::env::var(DEPTH_GROUP_ENV)
+        .unwrap_or(DEPTH_DEFAULT_GROUP.to_string());
+    if let Err(e) = chown_socket_group(&socket_path, &group)
+    {
+        println!("warning: could not set socket group to {group:?}: {e}");
+    }
     println!("Depth server listening on {}", socket_path.display());
     if printer_config.is_some() {
         // TODO: mb full support for monitor mode?

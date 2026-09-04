@@ -255,6 +255,22 @@ iot_driver serve             # Start gRPC server
 sudo iot_driver depth-server # Start UDS server
 ```
 
+
+#### Depth server group access
+
+The depth server binds the socket as root with mode `0660`. To let non-root
+users connect, install the tmpfiles.d rule and add users to the group
+(default `input`):
+
+```bash
+sudo make install-tmpfiles         # /run/iot_driver owned root:input
+sudo usermod -aG input YOUR_USER   # log out/in for group to take effect
+sudo iot_driver depthd             # uses groupt input by default
+```
+
+The group can be overridden with `IOT_DRIVER_DEPTH_GROUP` (name or numeric
+GID; empty/unset leaves the socket owned `root:root`).
+
 See [docs/CLI.md](docs/CLI.md) for all 60+ commands including remapping, macros, animations, audio reactive, and firmware tools.
 
 ### Interactive TUI
@@ -319,8 +335,12 @@ The driver allows to start a Unix domain server streaming depth values for nativ
 sudo iot_driver depth-server
 ```
 
-By default depth server creates the socket at `/run/iot_driver/depth.sock` and requires root priveleges to create, read and write.
+By default depth server creates the socket at `/run/iot_driver/depth.sock` and requires root privileges to create, read and write.
 Socket path can be specified with `--socket` flag to create a socket owned by the calling user at a specified path.
+
+To allow non-root access at the default path, install the tmpfiles.d rule
+(`sudo make install-tmpfiles`) and run the server with
+`IOT_DRIVER_DEPTH_GROUP=input` — see [Depth server group access](#depth-server-group-access).
 
 Check `iot_driver depth-server --help` for more details and [depth_server](iot_driver_linux/src/depth_server.rs) module documentation for protocol used for communication.
 Sample socket usage can be found [here](iot_driver_linux/examples/depth_server_monitor.rs).
