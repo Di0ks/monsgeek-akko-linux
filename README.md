@@ -21,6 +21,7 @@ A Linux userspace driver for MonsGeek, Akko, and other magnetic keyboards using 
 - **GIF animations** - Upload or stream animations to keyboard
 - **Key remapping and macros** - Remap keys, record text macros
 - **gRPC server** - Compatible with official MonsGeek web app
+- **UDS depth server** - UDS server streaming depth values for native apps
 
 ## Installation
 
@@ -251,6 +252,7 @@ iot_driver triggers          # Show trigger settings
 iot_driver set-rt on 0.3     # Enable Rapid Trigger
 iot_driver tui               # Interactive TUI
 iot_driver serve             # Start gRPC server
+sudo iot_driver depth-server # Start UDS server
 ```
 
 See [docs/CLI.md](docs/CLI.md) for all 60+ commands including remapping, macros, animations, audio reactive, and firmware tools.
@@ -307,6 +309,21 @@ The server runs on `127.0.0.1:3814` with gRPC-Web support.
 - Key remapping
 - Macro editor
 - Firmware updates (use with caution)
+
+### Unix domain socket server
+
+The driver allows to start a Unix domain server streaming depth values for native apps.
+
+**Starting the UDS serve:**
+```bash
+sudo iot_driver depth-server
+```
+
+By default depth server creates the socket at `/run/iot_driver/depth.sock` and requires root priveleges to create, read and write.
+Socket path can be specified with `--socket` flag to create a socket owned by the calling user at a specified path.
+
+Check `iot_driver depth-server --help` for more details and [depth_server](iot_driver_linux/src/depth_server.rs) module documentation for protocol used for communication.
+Sample socket usage can be found [here](iot_driver_linux/examples/depth_server_monitor.rs).
 
 ## LED Modes
 

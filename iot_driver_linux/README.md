@@ -259,6 +259,7 @@ iot_driver list          # List all HID devices
 iot_driver raw 8f        # Send raw vendor command (hex)
 iot_driver serve         # Start gRPC server on port 3814
 iot_driver tui           # Interactive terminal UI
+sudo iot_driver depthd   # Start UDS at `/run/iot_driver/depth.sock`
 ```
 
 ### Global Flags
@@ -337,6 +338,7 @@ iot_driver_linux/
     main.rs             # Command dispatch
     commands/           # Command handlers
     protocol.rs         # HID protocol encoding/decoding
+    depth_server.rs     # UDS depth server
     grpc.rs             # gRPC server
     firmware.rs         # Firmware file parsing
     flash.rs            # Flash protocol implementation
