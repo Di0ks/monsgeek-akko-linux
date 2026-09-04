@@ -3,7 +3,7 @@ members = [".", "monsgeek-transport", "monsgeek-keyboard", "monsgeek-joystick"]
 
 [package]
 name = "iot_driver"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 license = "GPL-3.0"
 description = "Linux driver for MonsGeek/Akko magnetic Hall Effect keyboards"

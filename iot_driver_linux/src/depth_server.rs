@@ -19,11 +19,12 @@
 //! keys never reported are absent), then a stream of `D` events as keys move.
 
 use monsgeek_keyboard::KeyboardInterface;
-use monsgeek_transport::protocol::cmd;
+use monsgeek_transport::protocol::matrix::key_name;
+use monsgeek_transport::protocol::{MatrixPos, cmd};
 use monsgeek_transport::{
-    ChecksumType, DeviceDiscovery, FlowControlTransport, HidDiscovery, TimestampedEvent, Transport,
-    TransportType, VendorEvent,
+    ChecksumType, DeviceDiscovery, FlowControlTransport, HidDiscovery, PrinterConfig, TimestampedEvent, Transport, TransportType, VendorEvent
 };
+use tracing::info;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -275,7 +276,11 @@ async fn serve_client(
 /// Opens the first magnetism-capable device, enables magnetism reporting,
 /// serves UDS clients, and on shutdown disables reporting and removes the
 /// socket. The device is intentionally held open for the server's lifetime.
-pub async fn run(socket_path: PathBuf, shutdown: Arc<AtomicBool>) -> Result<(), String> {
+pub async fn run(
+    socket_path: PathBuf,
+    shutdown: Arc<AtomicBool>,
+    printer_config: Option<PrinterConfig>
+) -> Result<(), String> {
     let keyboard = open_depth_device()?;
 
     if let Some(parent) = socket_path.parent() {
@@ -292,6 +297,10 @@ pub async fn run(socket_path: PathBuf, shutdown: Arc<AtomicBool>) -> Result<(), 
         std::os::unix::fs::PermissionsExt::from_mode(0o660),
     );
     println!("Depth server listening on {}", socket_path.display());
+    if printer_config.is_some() {
+        // TODO: mb full support for monitor mode?
+        info!("Monitor mode enabled for depth server (limited mode, only events are shown");
+    }
 
     keyboard
         .start_magnetism_report()
@@ -310,6 +319,17 @@ pub async fn run(socket_path: PathBuf, shutdown: Arc<AtomicBool>) -> Result<(), 
         let reader_kb = keyboard;
         tokio::task::spawn_blocking(move || {
             read_keyboard_events(reader_kb, cache, event_tx, reader_shutdown);
+        });
+    }
+
+    // limited monitoring here
+    if let Some(_) = printer_config {
+        let mut event_rx = event_tx.subscribe();
+        tokio::task::spawn(async move {
+            while let Ok(ev) = event_rx.recv().await {
+                let name = key_name(MatrixPos::new(ev.key_index));
+                println!("`{name}` = {}", ev.depth_raw);
+            }
         });
     }
 

@@ -409,7 +409,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let shutdown = Arc::clone(&shutdown);
                 ctrlc::set_handler(move || shutdown.store(true, Ordering::Relaxed))?;
             }
-            depth_server::run(path, shutdown)
+            depth_server::run(path, shutdown, printer_config)
                 .await
                 .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
         }
